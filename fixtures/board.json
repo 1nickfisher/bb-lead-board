@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-10-19T12:00:00.000Z",
+  "updatedBy": "lead",
+  "decisions": [
+    {
+      "id": "demo-tokens",
+      "title": "Rotate the demo tokens",
+      "project": "Factory",
+      "tag": "Security · 15 min",
+      "context": "One limited token per demo host. Old tokens stay valid as a fallback.",
+      "options": [
+        { "label": "Later", "phrase": "demo tokens: later", "recommended": false, "why": null },
+        { "label": "Start now", "phrase": "demo tokens: step 2 now", "recommended": true, "why": "it is the biggest fix for the time it takes, and fully reversible" }
+      ],
+      "risk": "none",
+      "link": "https://example.com/demo-tokens",
+      "approvalId": null,
+      "createdAt": "2026-10-19T11:00:00.000Z"
+    },
+    {
+      "id": "demo-release",
+      "title": "Release Demo 1.2 to production",
+      "project": "Demo",
+      "tag": "Release",
+      "context": "Staging accepted. The lead reads the release back before it runs.",
+      "options": [
+        { "label": "Hold", "phrase": "demo release: hold", "recommended": false, "why": null },
+        { "label": "Release", "phrase": "demo release: go", "recommended": true, "why": "staging acceptance is green" }
+      ],
+      "risk": "production",
+      "link": null,
+      "approvalId": "apr-demo-1",
+      "createdAt": "2026-10-19T11:30:00.000Z"
+    }
+  ],
+  "comingUp": [
+    { "title": "Demo website deploy", "project": "Demo", "after": "the review", "eta": "this afternoon" }
+  ],
+  "inFlight": [
+    { "project": "Demo", "items": [
+      { "text": "Consent form rebuild", "state": "ok", "link": null },
+      { "text": "Payments review", "state": "blocked", "link": null }
+    ] },
+    { "project": "Factory", "items": [
+      { "text": "Board panel plugin", "state": "wait", "link": null }
+    ] }
+  ],
+  "done": [
+    { "text": "Demo staging accepted", "at": "2026-10-19T10:00:00.000Z", "link": null }
+  ]
+}

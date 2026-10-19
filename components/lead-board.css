@@ -1,0 +1,232 @@
+/* Lead board layout, after the lead's 2026-10-19 mockup. Theme variables
+   only, so light, dark and custom palettes all work. Every class is prefixed
+   to stay clear of the host's own styles. */
+.lb {
+  font-family: var(--font-sans, inherit);
+  color: var(--foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.lb-page {
+  height: 100%;
+  overflow-y: auto;
+}
+.lb-page > .lb {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 12px 16px 16px;
+}
+.lb-hdr {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.lb-hdr h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+.lb-hdr-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.lb-muted {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.lb-sec {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin: 4px 0 0;
+  font-weight: 500;
+}
+.lb-banner {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--attention, var(--destructive));
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.lb-banner-error {
+  border-left-color: var(--destructive);
+}
+.lb-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.lb-card-urgent {
+  border-left: 4px solid var(--attention, var(--destructive));
+}
+.lb-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 8px;
+  align-items: center;
+}
+.lb-title {
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lb-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lb-ctx {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.lb-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.lb-opts > button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  height: auto;
+  min-height: 2rem;
+}
+.lb-why {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+}
+.lb-why b {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.lb-sent {
+  margin: 0;
+  font-size: 12px;
+  color: var(--foreground);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+.lb-linkbtn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.lb-linkbtn:hover {
+  color: var(--foreground);
+}
+.lb-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.lb details {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.lb summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lb ul {
+  margin: 8px 0 2px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.lb li {
+  overflow-wrap: anywhere;
+}
+.lb-ok {
+  color: var(--success, var(--muted-foreground));
+}
+.lb-wait {
+  color: var(--warning-text, var(--muted-foreground));
+}
+.lb-blocked {
+  color: var(--destructive);
+}
+.lb a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lb-note {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  line-height: 1.45;
+}
+.lb-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lb-voice textarea {
+  font: inherit;
+  font-size: 13px;
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid var(--input, var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 8px 10px;
+}
+.lb-phrase {
+  font-weight: 600;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.lb-malformed {
+  margin: 0;
+  font-size: 12px;
+  color: var(--destructive);
+}
+.lb-opts > .lb-voice {
+  flex-basis: 100%;
+}
