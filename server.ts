@@ -1,6 +1,8 @@
 // bb-plugin-lead-board backend. The panel itself runs in the app with the
 // signed-in user's session (it reads board.json through bb's file API and
-// posts option phrases as the user), so the server only declares settings.
+// posts option phrases as the user). The server declares settings and relays
+// speech requests to the board host's entry (host.ts), which holds bb-voice's
+// Cartesia key; only audio comes back.
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -8,6 +10,7 @@ import {
   isHostId,
   isThreadId,
 } from "./lib/config";
+import { hostContract, serverContract } from "./lib/voice-contract";
 
 export const settingDescriptors = {
   boardHostId: {
@@ -38,5 +41,33 @@ export const settingDescriptors = {
 } as const;
 
 export default async function plugin(bb: BbPluginApi) {
-  bb.settings.define(settingDescriptors);
+  const settings = bb.settings.define(settingDescriptors);
+  const host = bb.hosts.experimental_client({ contract: hostContract });
+  const boardHost = async () => {
+    const { boardHostId } = await settings.get();
+    return isHostId(boardHostId) ? boardHostId : null;
+  };
+  const NOT_SET = "the board host is not set";
+  const NO_ANSWER = "the board host did not answer";
+
+  bb.rpc.register(serverContract, {
+    speak: async ({ text }) => {
+      const hostId = await boardHost();
+      if (hostId === null) return { ok: false as const, reason: NOT_SET };
+      try {
+        return await host.call("speak", { text }, { hostId, timeoutMs: 30_000 });
+      } catch {
+        return { ok: false as const, reason: NO_ANSWER };
+      }
+    },
+    voiceStatus: async () => {
+      const hostId = await boardHost();
+      if (hostId === null) return { available: false, reason: NOT_SET };
+      try {
+        return await host.call("status", {}, { hostId, timeoutMs: 15_000 });
+      } catch {
+        return { available: false, reason: NO_ANSWER };
+      }
+    },
+  });
 }

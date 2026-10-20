@@ -1,6 +1,6 @@
-// board.json schema version 1 (TYP-1568) and the pure helpers the panel uses.
-// The file is written by the lead, so it is parsed here at the boundary and
-// everything downstream works with typed values.
+// board.json schemas 1 (TYP-1568) and 2 (board v2, TYP-1795) and the pure
+// helpers the panel uses. The file is written by the lead, so it is parsed here
+// at the boundary and everything downstream works with typed values.
 import { z } from "zod";
 import { STALE_AFTER_MS } from "./config";
 
@@ -10,19 +10,56 @@ const text = () => z.string().trim().min(1);
 const optionalText = () => z.string().nullish().transform((value) => value ?? null);
 
 /**
+ * A list where one unreadable item is dropped rather than failing the board,
+ * and a missing or malformed list is empty (schema 2 sections are additive).
+ */
+function lenientArray<T extends z.ZodType>(item: T, max = Infinity) {
+  return z
+    .unknown()
+    .optional()
+    .transform((value): z.output<T>[] => {
+      if (!Array.isArray(value)) return [];
+      const items: z.output<T>[] = [];
+      for (const entry of value) {
+        const parsed = item.safeParse(entry);
+        if (parsed.success) items.push(parsed.data);
+        if (items.length >= max) break;
+      }
+      return items;
+    });
+}
+
+/** A count the panel shows; anything but a non-negative integer is unknown (null), never zero. */
+const count = () =>
+  z
+    .unknown()
+    .optional()
+    .transform((value) => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null));
+
+/**
  * Field limits in UTF-16 code units, the same object as schemas/board-limits.json
- * from TYP-1568 (docs/board-schema.md); lib/board-limits.test.ts fails if
- * they drift.
+ * (TYP-1568, schema 2 fields from TYP-1795; docs/board-schema.md);
+ * lib/board-limits.test.ts fails if they drift.
  */
 export const BOARD_LIMITS = {
-  board: { updatedAt: 40, updatedBy: 40 },
+  board: { updatedAt: 40, updatedBy: 40, checkedAt: 40 },
   decision: { id: 80, title: 200, project: 60, tag: 80, context: 1000, link: 500, approvalId: 80, createdAt: 40 },
+  decisionLink: { label: 80, href: 500 },
   option: { label: 80, phrase: 500, why: 400 },
   comingUp: { title: 200, project: 60, after: 200, eta: 80 },
   inFlightGroup: { project: 60 },
   inFlight: { text: 400, link: 500 },
-  done: { text: 400, at: 40, link: 500 },
+  done: { text: 400, at: 40, link: 500, project: 60, decision: 80 },
+  stats: { day: 10 },
+  project: { id: 60, name: 80, lastActivityAt: 40, link: 500 },
+  recent: { at: 40, project: 60, text: 300, link: 500 },
+  launch: { id: 80, name: 200, project: 60, target: 10 },
+  gate: { id: 80, name: 200, group: 80, owner: 80, link: 500 },
   maxOptions: 8,
+  maxLinks: 10,
+  maxRecent: 100,
+  maxLaunches: 20,
+  maxGates: 100,
 } as const;
 
 /** Clip text to `max` UTF-16 units for display, never splitting a surrogate pair. */
@@ -72,9 +109,11 @@ const decisionSchema = z.object({
   // Fail closed: anything but absent/false counts as needing repair.
   invalidLegacy: z.unknown().optional().transform((value) => value !== undefined && value !== null && value !== false),
   invalidReason: z.unknown().optional().transform((value) => (typeof value === "string" ? value : null)),
+  // Schema 2: labelled links (https:, thread:, file:, repo:); see lib/links.ts.
+  links: lenientArray(z.object({ label: text(), href: text() }), BOARD_LIMITS.maxLinks),
 });
 
-type ParsedDecision = z.infer<typeof decisionSchema>;
+type ParsedDecision = z.infer<typeof decisionSchema> & { unreadable?: true };
 
 /**
  * Each decision parses on its own: one the panel cannot read becomes a
@@ -99,6 +138,8 @@ const decisionsSchema = z.array(z.unknown()).transform((items) =>
       createdAt: null,
       invalidLegacy: true,
       invalidReason: "the panel could not read this decision",
+      links: [],
+      unreadable: true,
     };
   }),
 );
@@ -127,15 +168,106 @@ const doneSchema = z.object({
   link: optionalText(),
 });
 
-export const boardSchema = z.object({
-  schema: z.literal(1),
+const statsSchema = z.object({
+  day: optionalText(),
+  prsMerged: count(),
+  releases: count(),
+  reviewsDone: count(),
+  workersRunning: count(),
+  waitingOnNick: count(),
+  byProject: z
+    .record(z.string(), z.unknown())
+    .catch({})
+    .default({})
+    .transform((record) => {
+      const out: Record<string, { prsMerged: number | null; releases: number | null }> = {};
+      for (const [id, value] of Object.entries(record)) {
+        const entry = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+        out[id] = { prsMerged: count().parse(entry.prsMerged), releases: count().parse(entry.releases) };
+      }
+      return out;
+    }),
+});
+
+const projectSchema = z
+  .object({
+    id: text(),
+    name: optionalText(),
+    decisions: count(),
+    inFlight: count(),
+    mergedToday: count(),
+    lastActivityAt: optionalText(),
+    link: optionalText(),
+  })
+  .transform((project) => ({ ...project, name: project.name?.trim() ? project.name : project.id }));
+
+export const RECENT_KINDS = ["merged", "released", "reviewed", "decided", "started", "blocked", "done"] as const;
+/** "other" stands for a kind outside the contract. */
+export type RecentKind = (typeof RECENT_KINDS)[number] | "other";
+
+const recentSchema = z.object({
+  at: z.string(),
+  project: optionalText(),
+  kind: z
+    .unknown()
+    .optional()
+    .transform((value): RecentKind => ((RECENT_KINDS as readonly unknown[]).includes(value) ? (value as RecentKind) : "other")),
+  text: text(),
+  link: optionalText(),
+});
+
+export const GATE_STATUSES = ["done", "in-progress", "blocked", "not-started"] as const;
+export type GateStatus = (typeof GATE_STATUSES)[number];
+
+const gateSchema = z.object({
+  id: text(),
+  name: text(),
+  group: optionalText(),
+  // An unknown status never counts as progress.
+  status: z.enum(GATE_STATUSES).catch("not-started"),
+  owner: optionalText(),
+  link: optionalText(),
+});
+
+const launchSchema = z.object({
+  id: text(),
+  name: text(),
+  project: optionalText(),
+  target: optionalText(),
+  gates: lenientArray(gateSchema, BOARD_LIMITS.maxGates),
+});
+
+const boardFields = {
   updatedAt: z.string(),
   updatedBy: optionalText(),
   decisions: decisionsSchema.default([]),
   comingUp: z.array(comingUpSchema).default([]),
   inFlight: z.array(inFlightGroupSchema).default([]),
   done: z.array(doneSchema).default([]),
-});
+};
+
+export const boardSchema = z.discriminatedUnion("schema", [
+  z.object({ schema: z.literal(1), ...boardFields }).transform((board) => ({
+    ...board,
+    checkedAt: null,
+    stats: null,
+    projects: [],
+    recent: [],
+    launches: [],
+  })),
+  z.object({
+    schema: z.literal(2),
+    ...boardFields,
+    checkedAt: z.unknown().optional().transform((value) => (typeof value === "string" ? value : null)),
+    stats: z.unknown().optional().transform((value) => {
+      const parsed = statsSchema.safeParse(value);
+      return parsed.success ? parsed.data : null;
+    }),
+    projects: lenientArray(projectSchema),
+    recent: lenientArray(recentSchema, BOARD_LIMITS.maxRecent),
+    launches: lenientArray(launchSchema, BOARD_LIMITS.maxLaunches),
+  }),
+]);
 
 export type Board = z.infer<typeof boardSchema>;
 export type Decision = Board["decisions"][number];
@@ -143,6 +275,12 @@ export type DecisionOption = Decision["options"][number];
 export type ComingUp = Board["comingUp"][number];
 export type InFlightGroup = Board["inFlight"][number];
 export type DoneItem = Board["done"][number];
+export type Stats = NonNullable<Board["stats"]>;
+export type Project = z.output<typeof projectSchema>;
+export type RecentEvent = z.output<typeof recentSchema>;
+export type Launch = z.output<typeof launchSchema>;
+export type Gate = Launch["gates"][number];
+export type BoardLink = Decision["links"][number];
 
 export type ParseResult = { ok: true; board: Board } | { ok: false; error: string };
 
@@ -153,10 +291,10 @@ export function parseBoard(content: string): ParseResult {
   } catch {
     return { ok: false, error: "board.json is not valid JSON." };
   }
-  if (typeof raw === "object" && raw !== null && "schema" in raw && raw.schema !== 1) {
+  if (typeof raw === "object" && raw !== null && "schema" in raw && raw.schema !== 1 && raw.schema !== 2) {
     return {
       ok: false,
-      error: `board.json uses schema ${String(raw.schema)}; this panel reads schema 1.`,
+      error: `board.json uses schema ${String(raw.schema)}; this panel reads schemas 1 and 2.`,
     };
   }
   const parsed = boardSchema.safeParse(raw);
@@ -166,6 +304,11 @@ export function parseBoard(content: string): ParseResult {
     return { ok: false, error: `board.json is invalid at ${where}: ${issue?.message ?? "unknown"}.` };
   }
   return { ok: true, board: parsed.data };
+}
+
+/** What the Explain button sends; null for a decision the panel could not read. */
+export function explainPhrase(decision: Decision): string | null {
+  return decision.unreadable ? null : `explain ${decision.id}`;
 }
 
 /** The recommended option, or null when the lead marked none (schema allows exactly one). */

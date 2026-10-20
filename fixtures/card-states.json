@@ -1,0 +1,81 @@
+{
+  "schema": 2,
+  "updatedAt": "2026-10-20T16:48:00.000Z",
+  "checkedAt": "2026-10-20T16:58:00.000Z",
+  "updatedBy": "lead",
+  "projects": [
+    { "id": "demo", "name": "Demo clinic", "decisions": 4, "inFlight": 0, "mergedToday": 0, "lastActivityAt": null, "link": null },
+    { "id": "factory", "name": "Factory", "decisions": 1, "inFlight": 0, "mergedToday": 0, "lastActivityAt": null, "link": null }
+  ],
+  "decisions": [
+    {
+      "id": "demo-release",
+      "title": "Release Demo 1.2 to production",
+      "project": "demo",
+      "tag": "Release",
+      "context": "Staging accepted. The lead reads the release back before it runs.",
+      "options": [
+        { "label": "Hold", "phrase": "demo release: hold", "recommended": false, "why": null },
+        { "label": "Release", "phrase": "demo release: go", "recommended": true, "why": "staging acceptance is green" }
+      ],
+      "risk": "production",
+      "links": [
+        { "label": "Release notes", "href": "https://example.com/demo/releases/1.2" },
+        { "label": "Plan", "href": "file:/srv/bb/thread-storage/thr_lead1/plans/release.md" },
+        { "label": "Lead thread", "href": "thread:thr_lead1" }
+      ],
+      "createdAt": "2026-10-19T09:00:00.000Z"
+    },
+    {
+      "id": "demo-copy",
+      "title": "Pick the consent form wording",
+      "project": "demo",
+      "tag": "Copy",
+      "context": "Two short versions; both passed review.",
+      "options": [
+        { "label": "Short", "phrase": "consent wording: short", "recommended": true, "why": "it reads at a lower grade level" },
+        { "label": "Long", "phrase": "consent wording: long", "recommended": false, "why": null }
+      ],
+      "risk": "none",
+      "createdAt": "2026-10-20T13:30:00.000Z"
+    },
+    {
+      "id": "demo-malformed",
+      "title": "Choose the reminder time",
+      "project": "demo",
+      "tag": "Settings",
+      "context": "One phrase has a trailing space, so the panel will not send it.",
+      "options": [
+        { "label": "9 am", "phrase": "reminder: 9am ", "recommended": true, "why": null },
+        { "label": "Noon", "phrase": "reminder: noon", "recommended": false, "why": null }
+      ],
+      "risk": "none",
+      "createdAt": "2026-10-20T15:00:00.000Z"
+    },
+    {
+      "id": "lead-old-ask",
+      "title": "Confirm the old export is saved",
+      "project": "demo",
+      "tag": "",
+      "context": null,
+      "options": [{ "label": "Saved", "phrase": "old export saved", "recommended": true, "why": null }],
+      "risk": "none",
+      "invalidLegacy": true,
+      "invalidReason": "duplicate phrases",
+      "createdAt": "2026-10-20T14:00:00.000Z"
+    },
+    {
+      "id": "machine-hygiene-cloudroom2",
+      "title": "Machine hygiene: cloudroom2",
+      "project": "factory",
+      "tag": "machine-hygiene",
+      "context": "2026-W43: 2 verified unused candidates, 320000000 bytes (image sizes may share layers). Inventory 0123456789ab. Explicit Nick approval or a matching standing approval is required before deletion; recheck use and identity then. No changes made. sha256:aaa111 (200000000 bytes); sha256:bbb222 (120000000 bytes)",
+      "options": [
+        { "label": "Approve cleanup", "phrase": "Approve hygiene cloudroom2 2026-W43 0123456789ab", "recommended": true, "why": "Allow the lead to recheck and remove this inventory." },
+        { "label": "Keep", "phrase": "Keep hygiene cloudroom2 2026-W43 0123456789ab", "recommended": false, "why": "Preserve these candidates." }
+      ],
+      "risk": "none",
+      "createdAt": "2026-10-20T14:00:00.000Z"
+    }
+  ]
+}

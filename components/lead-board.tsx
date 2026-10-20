@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useBbNavigate, useSdk, useSettings } from "@get-bb/plugin-sdk/app";
+import {
+  useBbNavigate,
+  useSdk,
+  useSettings,
+  type PluginNavPanelProps,
+  type PluginThreadPanelProps,
+} from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,28 +18,23 @@ import {
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import {
-  ageMs,
   BOARD_LIMITS,
   clip,
   decisionFingerprint,
-  formatAge,
   canSend,
-  hasMalformedOption,
-  needsRepair,
-  isStale,
   needsConfirmation,
-  recommendedOption,
   type Board,
-  type ComingUp,
   type Decision,
   type DecisionOption,
-  type DoneItem,
-  type InFlightGroup,
 } from "@/lib/board";
 import { isReady, notConfiguredMessage, resolveConfig, type ReadyConfig } from "@/lib/config";
+import { freshness } from "@/lib/freshness";
+import { projectFromLocation } from "@/lib/views";
+import { BoardHostContext } from "./board-link";
+import { HomeView, ProjectSwitcher, ProjectView, type DecisionHandlers } from "./sections";
 import { useBoard, useNow } from "./use-board";
-import { useSentMarks, type SentMark } from "./use-sent";
-import { VoiceControls } from "./voice";
+import { useSentMarks } from "./use-sent";
+import { SpeakerProvider, VoiceButtons, VoiceNote, VoicePicker } from "./voice";
 import "./lead-board.css";
 
 const RISK_LABEL: Record<Decision["risk"], string> = {
@@ -45,197 +46,19 @@ const RISK_LABEL: Record<Decision["risk"], string> = {
   unknown: "Unrecognised-risk",
 };
 
-function SafeLink({ href, children }: { href: string | null; children: string }) {
-  const navigate = useBbNavigate();
-  if (href === null || !/^https:\/\//.test(href)) return <>{children}</>;
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      onClick={(event) => {
-        if (navigate.openUrl(href)) event.preventDefault();
-      }}
-    >
-      {children}
-    </a>
-  );
-}
-
-function DecisionCard({
-  decision,
-  sent,
-  sending,
-  onChoose,
-}: {
-  decision: Decision;
-  sent: SentMark | null;
-  sending: boolean;
-  onChoose(option: DecisionOption): void;
-}) {
-  const repair = needsRepair(decision);
-  const malformed = !repair && hasMalformedOption(decision);
-  const rec = recommendedOption(decision);
-  const urgent = needsConfirmation(decision);
-  // Legacy asks carry an empty tag: fall back to the project.
-  const tag = decision.tag?.trim() ? clip(decision.tag, BOARD_LIMITS.decision.tag) : decision.project ? clip(decision.project, BOARD_LIMITS.decision.project) : null;
-  return (
-    <article
-      className={urgent ? "lb-card lb-card-urgent" : "lb-card"}
-      aria-label={decision.title}
-      data-decision-id={decision.id}
-    >
-      <div className="lb-top">
-        <span className="lb-title">
-          <SafeLink href={decision.link}>{clip(decision.title, BOARD_LIMITS.decision.title)}</SafeLink>
-        </span>
-        {tag ? <span className="lb-tag">{tag}</span> : null}
-      </div>
-      {decision.context ? <p className="lb-ctx">{clip(decision.context, BOARD_LIMITS.decision.context)}</p> : null}
-      {sent === null ? (
-        <div className="lb-opts">
-          {decision.options.map((option, index) => (
-            <Button
-              key={index}
-              size="sm"
-              variant={option.recommended ? "default" : "outline"}
-              data-recommended={option.recommended ? "true" : undefined}
-              disabled={sending || repair || malformed}
-              onClick={() => onChoose(option)}
-            >
-              {option.recommended ? <span aria-hidden="true">★</span> : null}
-              {clip(option.label, BOARD_LIMITS.option.label)}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <p className="lb-sent" role="status">
-          <span>
-            Sent: waiting for the lead. You said "
-            <span className="lb-phrase" data-testid="sent-phrase">
-              {sent.phrase}
-            </span>
-            "
-          </span>
-        </p>
-      )}
-      {repair ? (
-        <p className="lb-malformed" role="note">
-          Needs repair: {clip(decision.invalidReason ?? "the lead must fix this decision", BOARD_LIMITS.option.why)}
-        </p>
-      ) : null}
-      {sent === null && malformed ? (
-        <p className="lb-malformed" role="note">
-          Malformed option: a phrase is empty, too long or has extra spaces, or there are too many
-          options, so these buttons are off until the lead fixes the board.
-        </p>
-      ) : null}
-      {rec ? (
-        <p className="lb-why">
-          <b>Recommended: {clip(rec.label, BOARD_LIMITS.option.label)}</b>
-          {rec.why?.trim() ? ` because ${clip(rec.why.trim().replace(/^because\s+/i, ""), BOARD_LIMITS.option.why)}` : null}
-        </p>
-      ) : null}
-    </article>
-  );
-}
-
-function ComingUpSection({ items }: { items: ComingUp[] }) {
-  if (items.length === 0) return null;
-  return (
-    <section aria-label="Coming up">
-      <h3 className="lb-sec">Coming up</h3>
-      <details>
-        <summary>
-          {items.length} {items.length === 1 ? "ask" : "asks"} the lead will bring when ready
-        </summary>
-        <ul>
-          {items.map((item, index) => (
-            <li key={index}>
-              {item.after ? <span className="lb-wait">After {clip(item.after, BOARD_LIMITS.comingUp.after)}</span> : null}
-              {item.after ? " · " : null}
-              {item.project ? `${clip(item.project, BOARD_LIMITS.comingUp.project)}: ` : null}
-              {clip(item.title, BOARD_LIMITS.comingUp.title)}
-              {item.eta ? <span className="lb-muted"> · {clip(item.eta, BOARD_LIMITS.comingUp.eta)}</span> : null}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </section>
-  );
-}
-
-const STATE_DOT: Record<"ok" | "wait" | "blocked", { className: string; label: string }> = {
-  ok: { className: "lb-ok", label: "on track" },
-  wait: { className: "lb-wait", label: "waiting" },
-  blocked: { className: "lb-blocked", label: "blocked" },
-};
-
-function InFlightSection({ groups }: { groups: InFlightGroup[] }) {
-  const visible = groups.filter((group) => group.items.length > 0);
-  if (visible.length === 0) return null;
-  return (
-    <section aria-label="In flight">
-      <h3 className="lb-sec">In flight</h3>
-      <div className="lb">
-        {visible.map((group) => {
-          const blocked = group.items.filter((item) => item.state === "blocked").length;
-          return (
-            <details key={group.project}>
-              <summary>
-                {clip(group.project, BOARD_LIMITS.inFlightGroup.project)} · {group.items.length}
-                {blocked > 0 ? <span className="lb-blocked"> · {blocked} blocked</span> : null}
-              </summary>
-              <ul>
-                {group.items.map((item, index) => (
-                  <li key={index}>
-                    <span className={STATE_DOT[item.state].className} aria-label={STATE_DOT[item.state].label}>
-                      ●
-                    </span>{" "}
-                    <SafeLink href={item.link}>{clip(item.text, BOARD_LIMITS.inFlight.text)}</SafeLink>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function sameLocalDay(iso: string | null, now: number): boolean {
-  if (iso === null) return true;
-  const at = Date.parse(iso);
-  if (Number.isNaN(at)) return true;
-  return new Date(at).toDateString() === new Date(now).toDateString();
-}
-
-function DoneSection({ items, now }: { items: DoneItem[]; now: number }) {
-  const today = items.filter((item) => sameLocalDay(item.at, now));
-  if (today.length === 0) return null;
-  return (
-    <section aria-label="Done today">
-      <details>
-        <summary>Done today · {today.length}</summary>
-        <ul>
-          {today.map((item, index) => (
-            <li key={index}>
-              <SafeLink href={item.link}>{clip(item.text, BOARD_LIMITS.done.text)}</SafeLink>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </section>
-  );
-}
-
 interface PendingChoice {
   decision: Decision;
   option: DecisionOption;
 }
 
-export function LeadBoard() {
+/** Which view is showing: the home page (null) or one project. */
+export interface ViewControl {
+  project: string | null;
+  setProject(id: string | null): void;
+}
+
+/** The side panel keeps its view in memory; the sidebar page keeps it in the URL. */
+export function LeadBoard({ view }: Partial<PluginThreadPanelProps> & { view?: ViewControl }) {
   const { values, isLoading } = useSettings();
   if (isLoading) {
     return (
@@ -262,7 +85,7 @@ export function LeadBoard() {
       </div>
     );
   }
-  return <LoadedBoard config={config} />;
+  return <LoadedBoard config={config} view={view} />;
 }
 
 /** The pending choice, if the board still asks exactly that question. */
@@ -276,8 +99,12 @@ function liveChoice(board: Board | null, choice: PendingChoice | null): PendingC
   return decision && option ? { decision, option } : null;
 }
 
-function LoadedBoard({ config }: { config: ReadyConfig }) {
+function LoadedBoard({ config, view }: { config: ReadyConfig; view?: ViewControl }) {
   const sdk = useSdk();
+  const [localProject, setLocalProject] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const project = view ? view.project : localProject;
+  const setProject = view ? view.setProject : setLocalProject;
   const navigate = useBbNavigate();
   const { board, error, loading, refresh } = useBoard(config.hostId, config.path);
   const now = useNow();
@@ -326,21 +153,50 @@ function LoadedBoard({ config }: { config: ReadyConfig }) {
     else void send({ decision, option });
   };
 
-  return (
-    <div className="lb">
+  // Explain asks a question; it answers nothing, so it needs no confirmation.
+  const explain = useCallback(
+    async (phrase: string) => {
+      try {
+        await sendText(phrase);
+        toast.success("Asked the lead to explain.");
+      } catch (cause) {
+        toast.error(`Not sent: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    },
+    [sendText],
+  );
+
+  const handlers: DecisionHandlers = {
+    inFlight: sent.inFlight,
+    sentFor: sent.markFor,
+    onChoose: choose,
+    onExplain: explain,
+    onSendText: sendText,
+    voice: config.voice,
+  };
+  const fresh = board ? freshness(board, now) : null;
+
+  const content = (
+    <BoardHostContext.Provider value={config.hostId}>
+    <div className="lb lb-root">
       <header className="lb-hdr">
         <h2>Lead board</h2>
         <div className="lb-hdr-side">
-          <span className="lb-muted">{board ? formatAge(board.updatedAt, now) : loading ? "loading…" : ""}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-muted-foreground hover:text-foreground"
-            aria-label="Refresh the board"
-            onClick={refresh}
-          >
-            <Icon name="RefreshCw" className="size-4" />
-          </Button>
+          <span className="lb-muted" data-testid="freshness">{fresh ? fresh.label : loading ? "loading…" : ""}</span>
+          <span className="lb-hdr-btns">
+            {config.voice ? (
+              <VoiceButtons board={board} onNote={(text) => setNote((previous) => (previous ? `${previous} ${text}` : text))} />
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-foreground"
+              aria-label="Refresh the board"
+              onClick={refresh}
+            >
+              <Icon name="RefreshCw" className="size-4" />
+            </Button>
+          </span>
         </div>
       </header>
 
@@ -351,9 +207,14 @@ function LoadedBoard({ config }: { config: ReadyConfig }) {
         </div>
       ) : null}
 
-      {board && isStale(board.updatedAt, now) ? <StaleBanner board={board} now={now} /> : null}
+      {board && fresh?.stale ? <StaleBanner board={board} minutes={fresh.staleMinutes} /> : null}
 
-      {config.voice ? <VoiceControls board={board} onSend={sendText} /> : null}
+      {board && !view ? <ProjectSwitcher board={board} project={project} onChange={setProject} /> : null}
+
+      {config.voice ? <VoicePicker /> : null}
+      {note !== null ? (
+        <VoiceNote text={note} onChange={setNote} onDiscard={() => setNote(null)} onSend={sendText} />
+      ) : null}
 
       {board === null ? (
         loading ? (
@@ -361,14 +222,10 @@ function LoadedBoard({ config }: { config: ReadyConfig }) {
             Loading the board…
           </div>
         ) : null
+      ) : project === null ? (
+        <HomeView board={board} now={now} handlers={handlers} onOpenProject={setProject} />
       ) : (
-        <BoardSections
-          board={board}
-          now={now}
-          inFlight={sent.inFlight}
-          sentFor={sent.markFor}
-          onChoose={choose}
-        />
+        <ProjectView board={board} id={project} now={now} handlers={handlers} onHome={() => setProject(null)} />
       )}
 
       <p className="lb-note">
@@ -414,65 +271,41 @@ function LoadedBoard({ config }: { config: ReadyConfig }) {
         </DialogContent>
       </Dialog>
     </div>
+    </BoardHostContext.Provider>
   );
+  return config.voice ? <SpeakerProvider>{content}</SpeakerProvider> : content;
 }
 
-function StaleBanner({ board, now }: { board: Board; now: number }) {
-  const age = ageMs(board.updatedAt, now);
-  const minutes = age === null ? null : Math.floor(age / 60_000);
+function StaleBanner({ board, minutes }: { board: Board; minutes: number | null }) {
+  const text =
+    board.schema === 1
+      ? minutes === null
+        ? "The board has no valid update time, so it may be out of date."
+        : `The board is ${minutes} min old, so it may be out of date.`
+      : minutes === null
+        ? "The board has no valid check time, so it may be out of date."
+        : `The feed last checked the board ${minutes} min ago, so it may be out of date.`;
   return (
     <div className="lb-banner" role="status" data-testid="stale-banner">
-      {minutes === null
-        ? "The board has no valid update time, so it may be out of date."
-        : `The board is ${minutes} min old, so it may be out of date.`}{" "}
-      Check the lead thread before you act on it.
+      {text} Check the lead thread before you act on it.
     </div>
   );
 }
 
-function BoardSections({
-  board,
-  now,
-  inFlight,
-  sentFor,
-  onChoose,
-}: {
-  board: Board;
-  now: number;
-  inFlight: ReadonlySet<string>;
-  sentFor(decision: Decision): SentMark | null;
-  onChoose(decision: Decision, option: DecisionOption): void;
-}) {
-  return (
-    <>
-      <section aria-label="Needs you now" className="lb">
-        <h3 className="lb-sec">Needs you now · {board.decisions.length}</h3>
-        {board.decisions.length === 0 ? (
-          <div className="lb-empty">Nothing needs you right now.</div>
-        ) : (
-          board.decisions.map((decision) => (
-            <DecisionCard
-              key={decision.id}
-              decision={decision}
-              sent={sentFor(decision)}
-              sending={inFlight.has(decision.id)}
-              onChoose={(option) => onChoose(decision, option)}
-            />
-          ))
-        )}
-      </section>
-      <ComingUpSection items={board.comingUp} />
-      <InFlightSection groups={board.inFlight} />
-      <DoneSection items={board.done} now={now} />
-    </>
-  );
-}
-
-/** Full-height scrolling frame for the nav-panel page. */
-export function LeadBoardPage() {
+/**
+ * Full-height scrolling frame for the nav-panel page. A project view is
+ * `?project=<id>`, or the `project/<id>` sub-path the page navigates to.
+ */
+export function LeadBoardPage({ subPath = "" }: Partial<PluginNavPanelProps>) {
+  const navigate = useBbNavigate();
+  const project = projectFromLocation(subPath, typeof window === "undefined" ? "" : window.location.search);
+  const view: ViewControl = {
+    project,
+    setProject: (id) => navigate.toPluginPanel("board", { subPath: id === null ? "" : `project/${encodeURIComponent(id)}` }),
+  };
   return (
     <div className="lb-page">
-      <LeadBoard />
+      <LeadBoard view={view} />
     </div>
   );
 }

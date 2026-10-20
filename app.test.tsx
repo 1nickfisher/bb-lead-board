@@ -373,9 +373,9 @@ describe("lead board panel", () => {
   });
 
   it("reports an unreadable board instead of rendering it", async () => {
-    const { slot } = await renderBoard({ schema: 2, updatedAt: "2026-10-19T12:00:00.000Z" });
+    const { slot } = await renderBoard({ schema: 3, updatedAt: "2026-10-19T12:00:00.000Z" });
     const alert = await slot.findByRole("alert");
-    expect(alert.textContent).toContain("schema 2");
+    expect(alert.textContent).toContain("schema 3");
   });
 
   it("shows the voice controls only when the setting is on", async () => {
@@ -499,8 +499,9 @@ describe("feed limits (TYP-1568 board-limits.json)", () => {
     (board.decisions[0] as { options: unknown[] }).options = options;
     const { slot } = await renderBoard(board);
     const card = within(await slot.findByRole("article", { name: "Rotate the demo tokens" }));
-    expect(card.getAllByRole("button")).toHaveLength(BOARD_LIMITS.maxOptions + 1);
-    expect(card.getAllByRole("button").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    const group = within(card.getByRole("group", { name: "Options" }));
+    expect(group.getAllByRole("button")).toHaveLength(BOARD_LIMITS.maxOptions + 1);
+    expect(group.getAllByRole("button").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
     expect(card.getByText(/malformed option/i)).toBeTruthy();
   });
 
@@ -584,7 +585,7 @@ describe("legacy decisions TYP-1568 flags as invalid", () => {
     expect(card.querySelector(".lb-title")!.textContent).toHaveLength(BOARD_LIMITS.decision.title);
     expect(card.querySelector(".lb-ctx")!.textContent).toHaveLength(BOARD_LIMITS.decision.context);
     expect(within(card).getByText("Needs repair: duplicate phrases")).toBeTruthy();
-    const buttons = within(card).getAllByRole("button") as HTMLButtonElement[];
+    const buttons = within(within(card).getByRole("group", { name: "Options" })).getAllByRole("button") as HTMLButtonElement[];
     expect(buttons).toHaveLength(2);
     buttons.forEach((button) => {
       expect(button.disabled).toBe(true);

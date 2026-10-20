@@ -2,7 +2,10 @@
 // frontend (which re-validates the values it receives).
 
 export const POLL_INTERVAL_MS = 20_000;
+/** Schema 1: the board is stale this long after its last change. */
 export const STALE_AFTER_MS = 15 * 60_000;
+/** Schema 2: the board is stale this long after the feed last checked it. */
+export const CHECK_STALE_AFTER_MS = 10 * 60_000;
 
 const HOST_ID = /^host_[a-z0-9]+$/;
 const THREAD_ID = /^thr_[a-z0-9]+$/;
