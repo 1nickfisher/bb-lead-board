@@ -16,11 +16,23 @@ with the lead by polling it every 20 seconds.
 
 ## Views (schema 2)
 
-- **Home:** project chips (with the number of decisions waiting), a stats
+- **Home:** the project list, a stats
   strip (waiting on you, merged and released today, reviews, workers
   running), the launch gauges, **Needs you now**, **Recent** and a done-today
   strip. A schema 1 board shows Needs you now, Coming up, In flight and Done
   today, as before.
+- **Project list:** collapsed by default to one line, such as "12 projects ·
+  2 need you · 1 blocked" (blocked: a project with a blocked in-flight item).
+  It opens on click or tap and remembers open or closed for the window
+  (session storage). Each chip shows the decisions waiting and a status,
+  derived from the feed: **Urgent** (a waiting decision with production,
+  security, money or unrecognised risk; destructive colour, warning icon),
+  **Needs you** (any other waiting decision; warning colour, clock),
+  **Active** (work in flight, a merge today or any activity in 24 hours;
+  success colour, half-filled circle) or **Quiet** (nothing in 24 hours;
+  muted, empty circle). Colour is never the only signal: every chip has the
+  icon and the word, and its accessible name spells it out. Chips are ordered
+  by status, then name.
 - **Project view:** that project's decisions, stats, launch gates, in-flight
   work, coming-up items and recent activity. The side panel has a project
   switcher; the sidebar page uses the chips and a back link.
@@ -104,6 +116,37 @@ with the lead by polling it every 20 seconds.
   text. Without that voice the panel uses the best installed browser voice
   for the user's language (Premium, Enhanced, Natural or neural first) and
   shows a **Reading voice** picker.
+
+- **Refresh** (header, circular arrows): re-reads board.json at once, then
+  asks the board host to rebuild the feed now. The host entry runs one fixed
+  command, `/home/agent/code/factory/bin/factory board refresh`, with no
+  shell; the rpc takes no input, so the panel can never choose the command
+  or its arguments. That command always writes `board.json` in factory's
+  state directory (`$FACTORY_STATE_ROOT`, else
+  `${XDG_STATE_HOME:-~/.local/state}/factory`), so the host runs it only when
+  the `boardPath` setting is that same file (symlinks followed) and otherwise
+  shows an error naming both paths. The server allows one rebuild per 15 seconds (a tap
+  inside that window says when to try again) and joins a tap made while one
+  runs. The icon spins while it runs, and the board is read again when it
+  finishes. A failure is shown under the header and the last good board stays.
+- **New-decision sound:** when a poll shows a decision id the panel has not
+  seen since it opened, it plays a short two-note chime made with WebAudio
+  (no audio files) and highlights the new card, with a "New" badge, for 10
+  seconds. Never on the first load, at most one chime per poll however many
+  are new, and once per id per window, so two open panels do not both chime.
+  The bell in the header mutes it (kept in local storage). Browsers only
+  allow audio after a user gesture, so the sound arms on the first tap or key
+  press in the window, with a small hint until then. It only works while a
+  Lead board panel is open (and the board is polled only while visible); it
+  is not a notification.
+
+![Projects open and a new card, 360 px, light](docs/screenshots/projects-360-light.png)
+![Projects open and a new card, 360 px, dark](docs/screenshots/projects-360-dark.png)
+![Side panel width, light](docs/screenshots/projects-420-light.png)
+![Side panel width, dark](docs/screenshots/projects-420-dark.png)
+
+These four come from a standalone harness with stand-in theme tokens, so
+bb's own button and icon styles are missing from them.
 
 ## Settings
 

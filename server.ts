@@ -2,7 +2,8 @@
 // signed-in user's session (it reads board.json through bb's file API and
 // posts option phrases as the user). The server declares settings and relays
 // speech requests to the board host's entry (host.ts), which holds bb-voice's
-// Cartesia key; only audio comes back.
+// Cartesia key; only audio comes back. It also relays "rebuild the feed now",
+// rate-limited here to once per REFRESH_INTERVAL_MS.
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -10,7 +11,8 @@ import {
   isHostId,
   isThreadId,
 } from "./lib/config";
-import { hostContract, serverContract } from "./lib/voice-contract";
+import { REFRESH_INTERVAL_MS, RefreshLimiter } from "./lib/refresh-limit";
+import { hostContract, serverContract, type BoardRefreshResult } from "./lib/voice-contract";
 
 export const settingDescriptors = {
   boardHostId: {
@@ -49,6 +51,7 @@ export default async function plugin(bb: BbPluginApi) {
   };
   const NOT_SET = "the board host is not set";
   const NO_ANSWER = "the board host did not answer";
+  const limiter = new RefreshLimiter(REFRESH_INTERVAL_MS);
 
   bb.rpc.register(serverContract, {
     speak: async ({ text }) => {
@@ -58,6 +61,29 @@ export default async function plugin(bb: BbPluginApi) {
         return await host.call("speak", { text }, { hostId, timeoutMs: 30_000 });
       } catch {
         return { ok: false as const, reason: NO_ANSWER };
+      }
+    },
+    refreshBoard: async (): Promise<BoardRefreshResult> => {
+      const hostId = await boardHost();
+      if (hostId === null) return { ok: false, reason: NOT_SET, retryInMs: null };
+      // The host rebuilds only when this is the file the fixed command writes.
+      const { boardPath } = await settings.get();
+      if (!isBoardPath(boardPath)) return { ok: false, reason: "the board file is not set", retryInMs: null };
+      try {
+        const result = await limiter.run(() =>
+          host.call("refreshBoard", { boardPath }, { hostId, timeoutMs: 130_000 }),
+        );
+        if (!result.ok) {
+          const seconds = Math.ceil(result.retryInMs / 1000);
+          return {
+            ok: false,
+            reason: `The feed was rebuilt moments ago. Try again in ${seconds} s.`,
+            retryInMs: result.retryInMs,
+          };
+        }
+        return result.value.ok ? { ok: true } : { ok: false, reason: result.value.reason, retryInMs: null };
+      } catch {
+        return { ok: false, reason: NO_ANSWER, retryInMs: null };
       }
     },
     voiceStatus: async () => {

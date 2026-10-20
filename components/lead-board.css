@@ -929,3 +929,148 @@ button.lb-gate:hover .lb-gate-name {
 .lb-risk-urgent .lb-glyph {
   color: var(--attention, var(--destructive));
 }
+
+/* ---------- Projects accordion and status chips (TYP-1869) ---------- */
+.lb-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lb-projects-toggle {
+  font: inherit;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+.lb-projects-toggle:hover {
+  background: var(--state-hover, var(--secondary));
+}
+.lb-projects-toggle:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 1px;
+}
+.lb-projects-title {
+  font-weight: 600;
+}
+.lb-projects-sum {
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+.lb-projects-part {
+  white-space: nowrap;
+}
+.lb-projects-chev {
+  color: var(--muted-foreground);
+  transition: transform 120ms ease;
+}
+.lb-projects-chev-open {
+  transform: rotate(90deg);
+}
+/* Status: tint, edge and icon from the theme's status tokens; the icon and
+   label say the same in words, so colour is never the only signal. */
+.lb-chip {
+  --lb-st: var(--muted-foreground);
+  --lb-st-text: var(--muted-foreground);
+  border-color: color-mix(in oklch, var(--lb-st) 45%, var(--border));
+  background: color-mix(in oklch, var(--lb-st) 9%, var(--card));
+}
+.lb-chip:hover {
+  background: color-mix(in oklch, var(--lb-st) 16%, var(--card));
+}
+.lb-chip-urgent {
+  --lb-st: var(--destructive);
+  --lb-st-text: var(--destructive-text, var(--destructive));
+}
+.lb-chip-needs-you {
+  --lb-st: var(--warning, var(--attention));
+  --lb-st-text: var(--warning-text, var(--foreground));
+}
+.lb-chip-active {
+  --lb-st: var(--success, var(--brand, var(--primary)));
+  --lb-st-text: var(--success, var(--brand, var(--primary)));
+}
+.lb-chip-quiet {
+  border-color: var(--border);
+  background: var(--card);
+}
+.lb-chip-icon,
+.lb-chip-status {
+  color: var(--lb-st-text);
+}
+.lb-chip > :not(.lb-chip-name) {
+  flex: none;
+}
+.lb-chip-name {
+  min-width: 3em;
+}
+.lb-chip-status {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lb-chip-quiet .lb-chip-status {
+  font-weight: 500;
+}
+
+/* New-decision highlight and the sound hint */
+.lb-new {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+.lb-card-new {
+  box-shadow: 0 0 0 2px var(--ring, var(--primary));
+  animation: lb-new-pulse 1.2s ease-out 2;
+}
+@keyframes lb-new-pulse {
+  0% {
+    background: color-mix(in oklch, var(--primary) 18%, var(--card));
+  }
+  100% {
+    background: var(--card);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-card-new {
+    animation: none;
+  }
+  .lb-projects-chev {
+    transition: none;
+  }
+}
+.lb-sound-hint {
+  margin: -6px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* Header refresh while the board host rebuilds the feed (TYP-1869) */
+.lb-spin {
+  animation: lb-spin 0.9s linear infinite;
+}
+@keyframes lb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-spin {
+    animation-duration: 2.5s;
+  }
+}

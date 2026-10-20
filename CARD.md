@@ -29,6 +29,8 @@ feed's order.
      ago", "3 h ago", "2 d ago"). Over 24 hours it is emphasised and gains an
      "over a day" flag.
    - **Project** display name, where cards from several projects are mixed.
+   - **New** badge, first, with a highlight ring for 10 seconds when the
+     decision arrived since the panel opened.
 4. **Context.** URLs and thread ids in it are links. A machine-hygiene card
    (`tag: machine-hygiene`) shows one summary line instead, such as
    "cloudroom2: 6 unused images, 705 MB", with the inventory and policy text

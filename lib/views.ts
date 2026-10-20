@@ -2,6 +2,7 @@
 // components only render.
 import type { Board, ComingUp, Decision, DoneItem, InFlightGroup, Launch, Project, RecentEvent } from "./board";
 import { shortHash } from "./hash";
+import { projectDecisions } from "./project-status";
 
 /** Unreadable times sort after every readable one. */
 function time(iso: string | null): number {
@@ -107,7 +108,7 @@ export interface ProjectSlice {
 export function projectSlice(board: Board, id: string): ProjectSlice {
   return {
     project: board.projects.find((project) => project.id === id) ?? null,
-    decisions: sortDecisions(board.decisions.filter((decision) => decision.project === id)),
+    decisions: sortDecisions(projectDecisions(board, id)),
     inFlight: board.inFlight.filter((group) => group.project === id).flatMap((group) => group.items),
     comingUp: board.comingUp.filter((item) => item.project === id),
     recent: filterRecent(board.recent, id),

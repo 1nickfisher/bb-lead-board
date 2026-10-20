@@ -43,6 +43,7 @@ export function DecisionCard({
   onExplain,
   onSendText,
   voice,
+  isNew = false,
 }: {
   decision: Decision;
   /** The project's display name. */
@@ -58,6 +59,8 @@ export function DecisionCard({
   onSendText(text: string): Promise<void>;
   /** The voice setting is on: offer read aloud and push-to-talk. */
   voice: boolean;
+  /** Arrived since the panel opened: highlight it briefly. */
+  isNew?: boolean;
 }) {
   const [explaining, setExplaining] = useState(false);
   const [replying, setReplying] = useState(false);
@@ -83,7 +86,7 @@ export function DecisionCard({
 
   return (
     <article
-      className={urgent ? "lb-card lb-card-urgent" : "lb-card"}
+      className={["lb-card", urgent ? "lb-card-urgent" : null, isNew ? "lb-card-new" : null].filter(Boolean).join(" ")}
       aria-label={decision.title}
       data-decision-id={decision.id}
     >
@@ -93,8 +96,13 @@ export function DecisionCard({
         </span>
         {tag ? <span className="lb-tag">{tag}</span> : null}
       </div>
-      {age || meta.length > 0 || risk ? (
+      {age || meta.length > 0 || risk || isNew ? (
         <p className="lb-meta">
+          {isNew ? (
+            <span className="lb-new" data-testid="new-badge">
+              New
+            </span>
+          ) : null}
           {risk ? (
             <span className={urgent ? "lb-risk lb-risk-urgent" : "lb-risk"} data-testid="risk-badge">
               <Glyph name="alert" />

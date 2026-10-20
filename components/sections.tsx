@@ -1,6 +1,6 @@
 // The board's sections: the home page and one project's view are both built
 // from these.
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   BOARD_LIMITS,
@@ -27,6 +27,7 @@ import {
   withEventKeys,
   type RecentSort,
 } from "@/lib/views";
+import { projectStates, projectsSummary, type ProjectStatus } from "@/lib/project-status";
 import { replyTarget } from "@/lib/reply";
 import { BoardLink } from "./board-link";
 import { useDraft } from "./drafts";
@@ -45,6 +46,8 @@ export interface DecisionHandlers {
   onSendText(text: string): Promise<void>;
   /** The voice setting is on. */
   voice: boolean;
+  /** Decisions new since the panel opened, highlighted briefly. */
+  highlighted: ReadonlySet<string>;
 }
 
 function Count({ value }: { value: number | null }) {
@@ -74,36 +77,106 @@ function StatsStrip({ items }: { items: { label: string; value: number | null }[
 
 /* ---------- Projects ---------- */
 
+/** `label` is shown on the chip; `full` is its accessible wording. */
+const STATUS: Record<ProjectStatus, { label: string; full: string; glyph: GlyphName }> = {
+  urgent: { label: "Urgent", full: "needs you, urgent", glyph: "alert" },
+  "needs-you": { label: "Needs you", full: "needs you", glyph: "clock" },
+  active: { label: "Active", full: "active", glyph: "progress" },
+  quiet: { label: "Quiet", full: "quiet", glyph: "circle" },
+};
+
+const PROJECTS_OPEN_KEY = "lead-board:projects-open";
+
+/** Open or closed, remembered per window (session storage); closed by default. */
+function useProjectsOpen(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => {
+    try {
+      return sessionStorage.getItem(PROJECTS_OPEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const update = (next: boolean) => {
+    setOpen(next);
+    try {
+      sessionStorage.setItem(PROJECTS_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      // Private mode: the choice lasts for this view only.
+    }
+  };
+  return [open, update];
+}
+
+/** The project list as an accordion: a one-line summary that opens to status chips. */
 function ProjectChips({
   board,
+  now,
   onOpen,
 }: {
   board: Board;
+  now: number;
   onOpen(id: string): void;
 }) {
+  const [open, setOpen] = useProjectsOpen();
+  const listId = useId();
+  const states = projectStates(board, now);
   return (
-    <nav aria-label="Projects" className="lb-chips">
-      {board.projects.map((project) => {
-        const waiting = board.decisions.filter((decision) => decision.project === project.id).length;
-        return (
-          <button
-            key={project.id}
-            type="button"
-            className="lb-chip"
-            data-project-id={project.id}
-            onClick={() => onOpen(project.id)}
-          >
-            <span className="lb-chip-name">{clip(project.name ?? project.id, BOARD_LIMITS.project.name)}</span>
-            {waiting > 0 ? (
-              <span className="lb-chip-badge" aria-label={`${waiting} waiting on you`}>
-                {waiting}
+    <section className="lb-projects">
+      <button
+        type="button"
+        className="lb-projects-toggle"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen(!open)}
+      >
+        <Glyph name="chevron" className={open ? "lb-projects-chev lb-projects-chev-open" : "lb-projects-chev"} />
+        <span className="lb-projects-title">Projects</span>
+        <span className="lb-projects-sum" data-testid="projects-summary">
+          {projectsSummary(states)
+            .split(" · ")
+            .map((part, index) => (
+              <span key={index} className="lb-projects-part">
+                {index > 0 ? " · " : null}
+                {part}
               </span>
-            ) : null}
-            {project.inFlight ? <span className="lb-chip-sub">{project.inFlight} in flight</span> : null}
-          </button>
-        );
-      })}
-    </nav>
+            ))}
+        </span>
+      </button>
+      {open ? (
+        <nav id={listId} aria-label="Projects" className="lb-chips">
+          {states.map(({ project, status, waiting, blocked }) => {
+            const look = STATUS[status];
+            const name = clip(project.name ?? project.id, BOARD_LIMITS.project.name);
+            const described = [
+              name,
+              look.full,
+              waiting > 0 ? `${waiting} waiting on you` : null,
+              blocked ? "blocked work" : null,
+            ]
+              .filter(Boolean)
+              .join(", ");
+            return (
+              <button
+                key={project.id}
+                type="button"
+                className={`lb-chip lb-chip-${status}`}
+                data-project-id={project.id}
+                data-status={status}
+                aria-label={described}
+                title={described}
+                onClick={() => onOpen(project.id)}
+              >
+                <Glyph name={look.glyph} className="lb-chip-icon" />
+                <span className="lb-chip-name">{name}</span>
+                {waiting > 0 ? <span className="lb-chip-badge">{waiting}</span> : null}
+                <span className="lb-chip-status">{look.label}</span>
+                {blocked ? <span className="lb-chip-sub">· blocked</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
+    </section>
   );
 }
 
@@ -175,6 +248,7 @@ function NeedsYou({
             onExplain={handlers.onExplain}
             onSendText={handlers.onSendText}
             voice={handlers.voice}
+            isNew={handlers.highlighted.has(decision.id)}
           />
         ))
       )}
@@ -440,7 +514,7 @@ export function HomeView({
   const stats = board.stats;
   return (
     <>
-      {board.projects.length > 0 ? <ProjectChips board={board} onOpen={onOpenProject} /> : null}
+      {board.projects.length > 0 ? <ProjectChips board={board} now={now} onOpen={onOpenProject} /> : null}
       {stats ? (
         <StatsStrip
           items={[

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   useBbNavigate,
+  useRpc,
   useSdk,
   useSettings,
   type PluginNavPanelProps,
@@ -30,11 +31,15 @@ import {
 import { isReady, notConfiguredMessage, resolveConfig, type ReadyConfig } from "@/lib/config";
 import { freshness } from "@/lib/freshness";
 import { projectFromLocation } from "@/lib/views";
+import type { serverContract } from "@/lib/voice-contract";
 import { BoardHostContext } from "./board-link";
+import { Glyph } from "./glyphs";
 import { HomeView, ProjectSwitcher, ProjectView, type DecisionHandlers } from "./sections";
+import { useSound } from "./sound";
 import { useBoard, useNow } from "./use-board";
+import { useNewDecisions } from "./use-new-decisions";
 import { useSentMarks } from "./use-sent";
-import { SpeakerProvider, VoiceButtons, VoiceNote, VoicePicker } from "./voice";
+import { IconButton, SpeakerProvider, VoiceButtons, VoiceNote, VoicePicker } from "./voice";
 import "./lead-board.css";
 
 const RISK_LABEL: Record<Decision["risk"], string> = {
@@ -107,8 +112,10 @@ function LoadedBoard({ config, view }: { config: ReadyConfig; view?: ViewControl
   const setProject = view ? view.setProject : setLocalProject;
   const navigate = useBbNavigate();
   const { board, error, loading, refresh } = useBoard(config.hostId, config.path);
+  const forced = useForceRefresh(refresh);
   const now = useNow();
   const sent = useSentMarks(board);
+  const highlighted = useNewDecisions(board);
   const [pending, setPending] = useState<PendingChoice | null>(null);
   const confirmable = liveChoice(board, pending);
 
@@ -173,6 +180,7 @@ function LoadedBoard({ config, view }: { config: ReadyConfig; view?: ViewControl
     onExplain: explain,
     onSendText: sendText,
     voice: config.voice,
+    highlighted,
   };
   const fresh = board ? freshness(board, now) : null;
 
@@ -184,25 +192,34 @@ function LoadedBoard({ config, view }: { config: ReadyConfig; view?: ViewControl
         <div className="lb-hdr-side">
           <span className="lb-muted" data-testid="freshness">{fresh ? fresh.label : loading ? "loading…" : ""}</span>
           <span className="lb-hdr-btns">
+            <SoundToggle />
             {config.voice ? (
               <VoiceButtons board={board} onNote={(text) => setNote((previous) => (previous ? `${previous} ${text}` : text))} />
             ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 text-muted-foreground hover:text-foreground"
-              aria-label="Refresh the board"
-              onClick={refresh}
+            <IconButton
+              label={forced.running ? "Rebuilding the board…" : "Refresh the board"}
+              aria-busy={forced.running}
+              data-testid="refresh-board"
+              onClick={forced.force}
             >
-              <Icon name="RefreshCw" className="size-4" />
-            </Button>
+              <Icon name="RefreshCw" className={forced.running ? "size-4 lb-spin" : "size-4"} />
+            </IconButton>
           </span>
         </div>
       </header>
 
+      <SoundHint />
+
       {error !== null ? (
         <div className="lb-banner lb-banner-error" role="alert">
           {error}
+          {board ? " Showing the last board read." : null}
+        </div>
+      ) : null}
+
+      {forced.problem !== null ? (
+        <div className="lb-banner lb-banner-error" role="status" data-testid="refresh-error">
+          {forced.problem}
           {board ? " Showing the last board read." : null}
         </div>
       ) : null}
@@ -274,6 +291,65 @@ function LoadedBoard({ config, view }: { config: ReadyConfig; view?: ViewControl
     </BoardHostContext.Provider>
   );
   return config.voice ? <SpeakerProvider>{content}</SpeakerProvider> : content;
+}
+
+/**
+ * The header's refresh: re-read board.json at once, ask the board host to
+ * rebuild the feed (the server allows one rebuild per 15 seconds), then read
+ * again. A failure is shown and the last good board stays.
+ */
+function useForceRefresh(refresh: () => void) {
+  const rpc = useRpc<typeof serverContract>();
+  const [running, setRunning] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const busy = useRef(false);
+  const force = useCallback(() => {
+    refresh();
+    if (busy.current) return;
+    busy.current = true;
+    setRunning(true);
+    Promise.resolve()
+      .then(() => rpc.call("refreshBoard", {}))
+      .then((result) => {
+        if (result.ok) {
+          setProblem(null);
+          refresh();
+        } else {
+          setProblem(`Could not rebuild the board: ${result.reason}`);
+        }
+      })
+      .catch((cause: unknown) => {
+        setProblem(`Could not rebuild the board: ${cause instanceof Error ? cause.message : String(cause)}`);
+      })
+      .finally(() => {
+        busy.current = false;
+        setRunning(false);
+      });
+  }, [refresh, rpc]);
+  return { force, running, problem };
+}
+
+/** Header: mute or unmute the new-decision chime (persisted). */
+function SoundToggle() {
+  const sound = useSound();
+  const label = sound.muted ? "Unmute the new-decision sound" : "Mute the new-decision sound";
+  return (
+    <IconButton label={label} pressed={sound.muted} onClick={() => sound.store.toggleMuted()}>
+      <Glyph name={sound.muted ? "bell-off" : "bell"} className="size-4" />
+    </IconButton>
+  );
+}
+
+/** Browsers start audio only after a user gesture; say so until one arms the chime. */
+function SoundHint() {
+  const sound = useSound();
+  if (sound.muted || sound.armed || !sound.supported) return null;
+  return (
+    <p className="lb-sound-hint" data-testid="sound-hint">
+      <Glyph name="bell" />
+      Tap anywhere on the board to turn on the sound for new decisions.
+    </p>
+  );
 }
 
 function StaleBanner({ board, minutes }: { board: Board; minutes: number | null }) {

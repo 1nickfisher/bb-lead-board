@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot, type RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 import fixtureV2 from "../fixtures/board-v2.json";
+import { installFakeAudio, type FakeAudio } from "./fake-audio";
 import { resetSentStores } from "./sent-store";
+import { MUTE_KEY, resetSoundStore } from "./sound";
 
 const SETTINGS = { boardHostId: "host_board1", boardPath: "/test/board.json", leadThreadId: "thr_lead1" };
 const CHECKED = Date.parse(fixtureV2.checkedAt);
@@ -15,26 +17,36 @@ function fixture(): BoardJson {
   return JSON.parse(JSON.stringify(fixtureV2)) as BoardJson;
 }
 
+/** A fake board host: `host.content` is what the next files.read returns. */
 function fakeSdk(board: unknown) {
-  const content = JSON.stringify(board);
+  const host = { content: JSON.stringify(board) };
   const read = vi.fn(async () => ({
     path: SETTINGS.boardPath,
-    content,
+    content: host.content,
     contentEncoding: "utf8" as const,
-    sha256: createHash("sha256").update(content).digest("hex"),
-    sizeBytes: content.length,
+    sha256: createHash("sha256").update(host.content).digest("hex"),
+    sizeBytes: host.content.length,
   }));
   const send = vi.fn(async (_args: unknown) => ({ ok: true as const, delivery: "sent" as const }));
-  return { read, send, sdk: { files: { read }, threads: { send } } as unknown as RenderSlotOptions["sdk"] };
+  return { host, read, send, sdk: { files: { read }, threads: { send } } as unknown as RenderSlotOptions["sdk"] };
 }
 
-async function renderPanel(board: unknown = fixture()) {
+type Slot = Awaited<ReturnType<typeof renderPanel>>["slot"];
+
+/** Open the collapsed project list. */
+function openProjects(slot: Slot) {
+  const toggle = slot.getByRole("button", { name: /^Projects/ });
+  if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle);
+  return within(slot.getByRole("navigation", { name: "Projects" }));
+}
+
+async function renderPanel(board: unknown = fixture(), rpc?: RenderSlotOptions["rpc"]) {
   const app = await loadPluginApp(() => import("../app"));
   const fake = fakeSdk(board);
   const slot = renderSlot(
     app.threadPanelActions[0]!,
     { threadId: "thr_lead1", params: null },
-    { settings: SETTINGS, sdk: fake.sdk, openFilePreview: () => true, openUrl: () => true },
+    { settings: SETTINGS, sdk: fake.sdk, openFilePreview: () => true, openUrl: () => true, rpc },
   );
   await slot.findByRole("heading", { name: "Lead board" });
   await slot.findByText("Rotate the demo tokens");
@@ -58,7 +70,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(CHECKED + 3 * 60_000);
   localStorage.clear();
+  sessionStorage.clear();
   resetSentStores();
+  resetSoundStore();
 });
 
 afterEach(() => {
@@ -206,7 +220,7 @@ describe("home page (schema 2)", () => {
 describe("project view", () => {
   it("opens from a project chip in the side panel and returns home", async () => {
     const { slot } = await renderPanel();
-    fireEvent.click(within(slot.getByRole("navigation", { name: "Projects" })).getByRole("button", { name: /Demo clinic/ }));
+    fireEvent.click(openProjects(slot).getByRole("button", { name: /Demo clinic/ }));
     await slot.findByRole("button", { name: "All projects" });
     const needs = within(slot.getByRole("region", { name: "Needs you now" }));
     expect(needs.getAllByRole("article").map((card) => card.dataset.decisionId)).toEqual(["demo-release", "demo-copy"]);
@@ -237,11 +251,206 @@ describe("project view", () => {
 
   it("navigates the sidebar page to a project's sub-path", async () => {
     const { slot } = await renderPage("");
-    fireEvent.click(await slot.findByRole("button", { name: /Factory/ }));
+    await slot.findByRole("button", { name: /^Projects/ });
+    fireEvent.click(openProjects(slot as unknown as Slot).getByRole("button", { name: /Factory/ }));
     expect(slot.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "board",
       options: { subPath: "project/factory" },
     });
+  });
+});
+
+describe("projects accordion (TYP-1869)", () => {
+  it("starts collapsed with a one-line summary and opens on click", async () => {
+    const { slot } = await renderPanel();
+    const toggle = slot.getByRole("button", { name: /^Projects/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(slot.getByTestId("projects-summary").textContent).toBe("3 projects · 2 need you · 1 blocked");
+    expect(slot.queryByRole("navigation", { name: "Projects" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(slot.getByRole("navigation", { name: "Projects" })).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(slot.queryByRole("navigation", { name: "Projects" })).toBeNull();
+  });
+
+  it("remembers open or closed for the window", async () => {
+    const first = await renderPanel();
+    openProjects(first.slot);
+    cleanup();
+    const second = await renderPanel();
+    expect(second.slot.getByRole("button", { name: /^Projects/ }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(second.slot.getByRole("button", { name: /^Projects/ }));
+    cleanup();
+    const third = await renderPanel();
+    expect(third.slot.getByRole("button", { name: /^Projects/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("orders chips by status and labels each status with an icon and words", async () => {
+    const { slot } = await renderPanel();
+    const chips = openProjects(slot).getAllByRole("button");
+    expect(chips.map((chip) => [chip.dataset.projectId, chip.dataset.status])).toEqual([
+      ["demo", "urgent"],
+      ["factory", "needs-you"],
+      ["site", "active"],
+    ]);
+    expect(chips.map((chip) => chip.querySelector(".lb-chip-status")?.textContent)).toEqual([
+      "Urgent",
+      "Needs you",
+      "Active",
+    ]);
+    expect(chips[0]!.getAttribute("aria-label")).toBe("Demo clinic, needs you, urgent, 2 waiting on you, blocked work");
+    for (const chip of chips) expect(chip.querySelector("svg.lb-chip-icon")).not.toBeNull();
+    expect(chips[0]!.textContent).toContain("blocked");
+  });
+});
+
+describe("new-decision sound (TYP-1869)", () => {
+  let audio: FakeAudio;
+
+  beforeEach(() => {
+    audio = installFakeAudio();
+  });
+
+  afterEach(() => {
+    audio.uninstall();
+  });
+
+  function withDecision(board: BoardJson, id: string): BoardJson {
+    const copy = JSON.parse(JSON.stringify(board)) as BoardJson;
+    copy.decisions.push({ ...copy.decisions[2]!, id, title: `Decision ${id}` });
+    return copy;
+  }
+
+  async function poll(slot: Slot, read: ReturnType<typeof fakeSdk>["read"]) {
+    const calls = read.mock.calls.length;
+    fireEvent.click(slot.getByRole("button", { name: "Refresh the board" }));
+    await waitFor(() => expect(read.mock.calls.length).toBe(calls + 1));
+    await act(async () => {});
+  }
+
+  async function arm() {
+    await act(async () => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+  }
+
+  it("hints until a user gesture arms the sound, then hides the hint", async () => {
+    const { slot } = await renderPanel();
+    expect(slot.getByTestId("sound-hint").textContent).toContain("turn on the sound");
+    await arm();
+    expect(slot.queryByTestId("sound-hint")).toBeNull();
+  });
+
+  it("never chimes or highlights on the first load", async () => {
+    const { slot } = await renderPanel();
+    await arm();
+    expect(audio.chimes()).toBe(0);
+    expect(slot.queryByTestId("new-badge")).toBeNull();
+  });
+
+  it("chimes once and highlights each new card when a poll brings new decisions", async () => {
+    const { slot, host, read } = await renderPanel();
+    await arm();
+    host.content = JSON.stringify(withDecision(withDecision(fixture(), "new-1"), "new-2"));
+    await poll(slot, read);
+    await slot.findByText("Decision new-1");
+    expect(audio.chimes()).toBe(1);
+    const fresh = slot.getAllByRole("article").filter((card) => card.classList.contains("lb-card-new"));
+    expect(fresh.map((card) => card.dataset.decisionId).sort()).toEqual(["new-1", "new-2"]);
+    expect(slot.getAllByTestId("new-badge")).toHaveLength(2);
+  });
+
+  it("stays silent when a poll repeats the same decisions", async () => {
+    const { slot, host, read } = await renderPanel();
+    await arm();
+    host.content = JSON.stringify({ ...fixture(), checkedAt: "2026-10-20T17:00:00.000Z" });
+    await poll(slot, read);
+    expect(audio.chimes()).toBe(0);
+  });
+
+  it("mutes from the header, persisted, and stays silent while muted", async () => {
+    const { slot, host, read } = await renderPanel();
+    await arm();
+    const mute = slot.getByRole("button", { name: "Mute the new-decision sound" });
+    expect(mute.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(mute);
+    const unmute = slot.getByRole("button", { name: "Unmute the new-decision sound" });
+    expect(unmute.getAttribute("aria-pressed")).toBe("true");
+    expect(localStorage.getItem(MUTE_KEY)).toBe("1");
+    host.content = JSON.stringify(withDecision(fixture(), "new-1"));
+    await poll(slot, read);
+    await slot.findByText("Decision new-1");
+    expect(audio.chimes()).toBe(0);
+    expect(slot.getByTestId("new-badge")).toBeTruthy();
+  });
+
+  it("starts muted when the window saved mute", async () => {
+    localStorage.setItem(MUTE_KEY, "1");
+    resetSoundStore();
+    const { slot } = await renderPanel();
+    expect(slot.getByRole("button", { name: "Unmute the new-decision sound" })).toBeTruthy();
+    expect(slot.queryByTestId("sound-hint")).toBeNull();
+  });
+});
+
+describe("force refresh (TYP-1869)", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  type RefreshAnswer = { ok: true } | { ok: false; reason: string; retryInMs: number | null };
+
+  it("re-reads at once, rebuilds the feed with a spinner, then reads again", async () => {
+    const gate = deferred<RefreshAnswer>();
+    const refreshBoard = vi.fn((_input: unknown) => gate.promise);
+    const { slot, read } = await renderPanel(fixture(), { refreshBoard } as never);
+    const before = read.mock.calls.length;
+    const button = slot.getByTestId("refresh-board");
+    expect(button.getAttribute("aria-label")).toBe("Refresh the board");
+    expect(button.parentElement?.getAttribute("title")).toBe("Refresh the board");
+    fireEvent.click(button);
+    expect(read.mock.calls.length).toBe(before + 1);
+    await waitFor(() => expect(refreshBoard).toHaveBeenCalledWith({}));
+    await waitFor(() => expect(button.getAttribute("aria-busy")).toBe("true"));
+    expect(button.getAttribute("aria-label")).toBe("Rebuilding the board…");
+    expect(button.querySelector(".lb-spin")).not.toBeNull();
+
+    // A second tap while it runs re-reads but starts no second rebuild.
+    fireEvent.click(button);
+    expect(read.mock.calls.length).toBe(before + 2);
+    expect(refreshBoard).toHaveBeenCalledTimes(1);
+
+    await act(async () => gate.resolve({ ok: true }));
+    await waitFor(() => expect(read.mock.calls.length).toBe(before + 3));
+    expect(button.getAttribute("aria-busy")).toBe("false");
+    expect(slot.queryByTestId("refresh-error")).toBeNull();
+  });
+
+  it("shows a failure and keeps the last good board", async () => {
+    const refreshBoard = vi.fn(async () => ({
+      ok: false,
+      reason: "The feed was rebuilt moments ago. Try again in 9 s.",
+      retryInMs: 9_000,
+    }));
+    const { slot } = await renderPanel(fixture(), { refreshBoard } as never);
+    fireEvent.click(slot.getByTestId("refresh-board"));
+    const banner = await slot.findByTestId("refresh-error");
+    expect(banner.textContent).toContain("Could not rebuild the board: The feed was rebuilt moments ago. Try again in 9 s.");
+    expect(banner.textContent).toContain("Showing the last board read.");
+    expect(slot.getByText("Rotate the demo tokens")).toBeTruthy();
+  });
+
+  it("shows an rpc error the same way", async () => {
+    const refreshBoard = vi.fn(async () => Promise.reject(new Error("server unavailable")));
+    const { slot } = await renderPanel(fixture(), { refreshBoard } as never);
+    fireEvent.click(slot.getByTestId("refresh-board"));
+    expect((await slot.findByTestId("refresh-error")).textContent).toContain("server unavailable");
+    expect(slot.getByText("Rotate the demo tokens")).toBeTruthy();
   });
 });

@@ -1,10 +1,12 @@
 // bb-plugin-lead-board host entry: speaks a card in bb-voice's Cartesia voice
-// on the board host, where bb-voice keeps its key. Clips are cached per text
-// in this plugin's data directory on the host.
+// on the board host, where bb-voice keeps its key, and rebuilds the board feed
+// with one fixed command (lib/board-refresh.ts). Clips are cached per text in
+// this plugin's data directory on the host.
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
+import { runBoardRefresh } from "./lib/board-refresh";
 import { cartesiaRequest, loadCartesiaConfig } from "./lib/cartesia";
 import { hostContract } from "./lib/voice-contract";
 
@@ -22,6 +24,7 @@ async function prune(dir: string): Promise<void> {
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
+    refreshBoard: async ({ boardPath }, context) => runBoardRefresh(boardPath, context.signal),
     status: async () => ((await loadCartesiaConfig()) ? { available: true, reason: null } : { available: false, reason: NO_VOICE }),
     speak: async ({ text }, context) => {
       const config = await loadCartesiaConfig();

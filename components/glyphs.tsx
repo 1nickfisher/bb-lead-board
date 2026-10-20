@@ -23,7 +23,10 @@ export type GlyphName =
   | "stop"
   | "mic"
   | "reply"
-  | "alert";
+  | "alert"
+  | "chevron"
+  | "bell"
+  | "bell-off";
 
 const PATHS: Record<GlyphName, ReactNode> = {
   check: <path d="M20 6 9 17l-5-5" />,
@@ -110,6 +113,21 @@ const PATHS: Record<GlyphName, ReactNode> = {
       <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
+    </>
+  ),
+  chevron: <path d="m9 18 6-6-6-6" />,
+  bell: (
+    <>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </>
+  ),
+  "bell-off": (
+    <>
+      <path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5" />
+      <path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      <path d="m2 2 20 20" />
     </>
   ),
 };
