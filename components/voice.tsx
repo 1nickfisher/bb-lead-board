@@ -9,7 +9,8 @@ import { experimental_usePluginId, useRpc } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { readAloudScript, type Board } from "@/lib/board";
 import { rankVoices } from "@/lib/speech";
-import { MAX_SPEECH_TEXT, type serverContract } from "@/lib/voice-contract";
+import type { serverContract } from "@/lib/voice-contract";
+import { MAX_SPEECH_TEXT } from "@/lib/voice-limits";
 import { Glyph } from "./glyphs";
 import { useRecorder } from "./recorder";
 

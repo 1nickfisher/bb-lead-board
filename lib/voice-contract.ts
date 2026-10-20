@@ -2,8 +2,9 @@
 // entry (host.ts). Audio is base64 mp3; reasons never carry credentials.
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { MAX_SPEECH_TEXT } from "./voice-limits";
 
-export const MAX_SPEECH_TEXT = 3000;
+export { MAX_SPEECH_TEXT };
 
 const speakInput = z.object({ text: z.string().trim().min(1).max(MAX_SPEECH_TEXT) }).strict();
 const speakOutput = z.union([
